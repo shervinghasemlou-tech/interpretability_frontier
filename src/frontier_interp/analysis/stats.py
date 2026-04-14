@@ -42,7 +42,7 @@ def benjamini_hochberg(p_values: List[float]) -> List[float]:
 
 def _key(r: Dict):
     return (
-        r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"],
+        r["model_key"], r["size"], r.get("source", "ALL"), r["family"], r["mechanism_type"], r["interpreter_arch"],
         r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full")
     )
 
@@ -63,12 +63,13 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
         summary.append({
             "model_key": key[0],
             "size": key[1],
-            "family": key[2],
-            "mechanism_type": key[3],
-            "interpreter_arch": key[4],
-            "control": key[5],
-            "split_name": key[6],
-            "train_size": key[7],
+            "source": key[2],
+            "family": key[3],
+            "mechanism_type": key[4],
+            "interpreter_arch": key[5],
+            "control": key[6],
+            "split_name": key[7],
+            "train_size": key[8],
             "num_rows": len(rows),
             "mean_gap": float(np.mean(gaps)),
             "median_gap": float(np.median(gaps)),
@@ -89,7 +90,7 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
 def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
     grouped = defaultdict(list)
     for r in raw_rows:
-        grouped[(r["model_key"], r["seed"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r)
+        grouped[(r["model_key"], r["seed"], r["size"], r.get("source", "ALL"), r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r)
 
     rows = []
     for key, items in grouped.items():
@@ -101,12 +102,13 @@ def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
             "model_key": key[0],
             "seed": key[1],
             "size": key[2],
-            "family": key[3],
-            "mechanism_type": key[4],
-            "interpreter_arch": key[5],
-            "control": key[6],
-            "split_name": key[7],
-            "train_size": key[8],
+            "source": key[3],
+            "family": key[4],
+            "mechanism_type": key[5],
+            "interpreter_arch": key[6],
+            "control": key[7],
+            "split_name": key[8],
+            "train_size": key[9],
             "mean_gap": float(np.mean(gaps)),
             "median_gap": float(np.median(gaps)),
             "p90_gap": float(np.quantile(gaps, 0.9)),
@@ -122,7 +124,7 @@ def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
 def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0.95, bootstrap_iterations: int = 1000) -> List[Dict]:
     grouped = defaultdict(list)
     for r in seed_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r)
+        grouped[(r["model_key"], r["size"], r.get("source", "ALL"), r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r)
 
     out = []
     for key, rows in grouped.items():
@@ -135,12 +137,13 @@ def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0
         out.append({
             "model_key": key[0],
             "size": key[1],
-            "family": key[2],
-            "mechanism_type": key[3],
-            "interpreter_arch": key[4],
-            "control": key[5],
-            "split_name": key[6],
-            "train_size": key[7],
+            "source": key[2],
+            "family": key[3],
+            "mechanism_type": key[4],
+            "interpreter_arch": key[5],
+            "control": key[6],
+            "split_name": key[7],
+            "train_size": key[8],
             "num_seeds": len(rows),
             "mean_gap_over_seeds": float(np.mean(mean_gaps)),
             "std_gap_over_seeds": float(np.std(mean_gaps)),
@@ -158,7 +161,7 @@ def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0
 def signed_gap_test(seed_rows: List[Dict], fdr_method: str = "bh") -> List[Dict]:
     grouped = defaultdict(list)
     for r in seed_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r["mean_gap"])
+        grouped[(r["model_key"], r["size"], r.get("source", "ALL"), r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r["mean_gap"])
 
     out = []
     for key, vals in grouped.items():
@@ -172,12 +175,13 @@ def signed_gap_test(seed_rows: List[Dict], fdr_method: str = "bh") -> List[Dict]
         out.append({
             "model_key": key[0],
             "size": key[1],
-            "family": key[2],
-            "mechanism_type": key[3],
-            "interpreter_arch": key[4],
-            "control": key[5],
-            "split_name": key[6],
-            "train_size": key[7],
+            "source": key[2],
+            "family": key[3],
+            "mechanism_type": key[4],
+            "interpreter_arch": key[5],
+            "control": key[6],
+            "split_name": key[7],
+            "train_size": key[8],
             "p_value": p,
         })
 

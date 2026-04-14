@@ -3,11 +3,17 @@
 This module keeps the repository dataset-agnostic. The experiment code consumes a
 list of normalized :class:`Example` objects, while dataset-specific quirks stay
 isolated here.
+
+Key behavior
+------------
+- ``num_samples`` limits the number of normalized examples when set to an int.
+- ``use_full_split=True`` or ``num_samples=None`` means: iterate the entire
+  requested split and keep all normalized examples.
 """
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from datasets import load_dataset
 
@@ -16,10 +22,18 @@ from frontier_interp.data.prompts import HANDCRAFTED_PROMPTS
 from frontier_interp.registries.datasets import resolve_dataset_spec
 
 
-
 def _trim(text: str) -> str:
     return " ".join(str(text).split())
 
+
+def _sample_cap(dataset_spec) -> Optional[int]:
+    if getattr(dataset_spec, "use_full_split", False):
+        return None
+    return getattr(dataset_spec, "num_samples", None)
+
+
+def _should_stop(count: int, cap: Optional[int]) -> bool:
+    return cap is not None and count >= cap
 
 
 def load_examples_from_spec(dataset_spec) -> List[Example]:
@@ -46,82 +60,61 @@ def load_examples_from_spec(dataset_spec) -> List[Example]:
     raise ValueError(f"Unsupported loader: {loader}")
 
 
-
 def _load_handcrafted(dataset_spec) -> List[Example]:
+    cap = _sample_cap(dataset_spec)
     examples: List[Example] = []
     for family, prompts in HANDCRAFTED_PROMPTS.items():
-        for p in prompts[: dataset_spec.num_samples]:
+        for p in prompts:
             examples.append(Example(text=p, family=family, source="handcrafted_diagnostics", task_type="prompt_suite"))
+            if _should_stop(len(examples), cap):
+                return examples
     return examples
-
 
 
 def _load_wikitext(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], registry["subset"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         txt = _trim(row.get("text", ""))
         if len(txt) > 20:
             out.append(Example(text=txt, family="wikitext", source=dataset_spec.registry_key, task_type="lm_continuation"))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out
 
 
-
 def _load_hellaswag(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         ctx = _trim(row["ctx"])
         choices = [_trim(x) for x in row["endings"]]
         answer = choices[int(row["label"])] if str(row["label"]).isdigit() else None
         out.append(Example(text=ctx, family="hellaswag", source=dataset_spec.registry_key, task_type="multiple_choice", choices=choices, answer=answer))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out
 
 
-
 def _load_piqa(dataset_spec, registry) -> List[Example]:
-    split = dataset_spec.split or registry["default_split"]
-
-    # Some PIQA mirrors on HF still require legacy dataset scripts, which newer
-    # `datasets` versions reject. Fall back to script-free parquet mirrors.
-    candidate_names = [registry["dataset_name"], "nthngdy/piqa", "gimmaru/piqa"]
-    ds = None
-    first_error = None
-    for dataset_name in candidate_names:
-        try:
-            ds = load_dataset(dataset_name, split=split)
-            break
-        except Exception as exc:
-            if first_error is None:
-                first_error = exc
-            if "Dataset scripts are no longer supported" in str(exc):
-                continue
-            raise
-
-    if ds is None:
-        raise RuntimeError(
-            "Failed to load PIQA from all known mirrors "
-            f"({candidate_names}). First error: {first_error}"
-        )
-
+    ds = load_dataset(registry["dataset_name"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         prompt = _trim(row["goal"])
         choices = [_trim(row["sol1"]), _trim(row["sol2"])]
         answer = choices[int(row["label"])]
         out.append(Example(text=prompt, family="piqa", source=dataset_spec.registry_key, task_type="multiple_choice", choices=choices, answer=answer))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out
 
 
-
 def _load_arc(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], registry["subset"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         q = _trim(row["question"])
@@ -133,41 +126,41 @@ def _load_arc(dataset_spec, registry) -> List[Example]:
             if answer_key in labels:
                 answer = choices[labels.index(answer_key)]
         out.append(Example(text=q, family=registry["subset"].lower(), source=dataset_spec.registry_key, task_type="multiple_choice", choices=choices, answer=answer))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out
 
 
-
 def _load_gsm8k(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], registry["subset"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         q = _trim(row["question"])
         a = _trim(row["answer"])
         out.append(Example(text=q, family="gsm8k", source=dataset_spec.registry_key, task_type="reasoning", answer=a))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out
 
 
-
 def _load_alpaca(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         prompt = _trim(row["instruction"])
         if row.get("input"):
             prompt = prompt + "\nInput: " + _trim(row["input"])
         out.append(Example(text=prompt, family="alpaca", source=dataset_spec.registry_key, task_type="instruction", answer=_trim(row.get("output", ""))))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out
 
 
-
 def _load_ultrachat(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], split=dataset_spec.split or registry["default_split"])
+    cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
         msgs = row.get("messages") or []
@@ -180,6 +173,6 @@ def _load_ultrachat(dataset_spec, registry) -> List[Example]:
         prompt = _trim(user_msgs[0])
         answer = _trim(assistant_msgs[0]) if assistant_msgs else None
         out.append(Example(text=prompt, family="ultrachat", source=dataset_spec.registry_key, task_type="chat", answer=answer))
-        if len(out) >= dataset_spec.num_samples:
+        if _should_stop(len(out), cap):
             break
     return out

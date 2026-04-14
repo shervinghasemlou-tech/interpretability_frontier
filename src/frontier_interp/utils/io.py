@@ -45,3 +45,10 @@ def save_yaml_snapshot(path: str | Path, obj):
         obj = asdict(obj)
     with path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(obj, f, sort_keys=False)
+
+
+
+def save_text(path: str | Path, text: str):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")

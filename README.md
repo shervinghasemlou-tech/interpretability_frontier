@@ -10,9 +10,14 @@ This repository is designed to be the experimental backbone for a paper on the d
 - **Model-agnostic**: supports a curated registry of sub-1B OSS base/instruct or base/chat pairs.
 - **Dataset-agnostic**: supports handwritten diagnostics plus open datasets from Hugging Face.
 - **Ablation-first**: counterarguments, controls, and counterfactuals are first-class config items.
-- **Paper-ready outputs**: raw CSVs, seed-level summaries, FDR-corrected tests, plots, logs, config snapshots, and per-example artifacts.
+- **Paper-ready outputs**: raw CSVs, seed-level summaries, FDR-corrected tests, plots, logs, config snapshots, per-example artifacts, Markdown reports, LaTeX tables, and a submission bundle.
 
 ## What the repository can do
+
+It now supports both **external compression** experiments and **self-reflection** experiments. The latter include:
+- self-probes trained on the target model's own hidden states,
+- prompted self-reports where the target model is asked to predict its own behavior or head-level attention target.
+
 
 - Distill behavior from a frozen target model into a smaller interpreter.
 - Predict internal mechanisms from the same frozen target model using the **same interpreter family**.
@@ -90,12 +95,31 @@ python -m frontier_interp.cli --config configs/debug_qwen.yaml
 Everything about the run lives in the config, including:
 - model sweep
 - datasets
+- full-split vs subsample loading
 - ablations
 - controls
 - seeds
 - budgets
 - plots
 - statistics
+- report and submission-bundle generation
+
+
+## Low-memory runs for 8 GB GPUs
+
+For smaller GPUs, the frozen target model should use either:
+- a smaller registry model such as `smollm2_360m_base`, or
+- bitsandbytes quantization with `load_in_8bit: true` or `load_in_4bit: true`, ideally with `device_map: auto`.
+
+Useful starter configs:
+
+```bash
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+python -m frontier_interp.cli --config configs/tiny_smoke.yaml
+python -m frontier_interp.cli --config configs/debug_qwen_8bit.yaml
+```
+
+`expandable_segments` can help reduce fragmentation in PyTorch's CUDA allocator, but it does not replace actual memory reduction from smaller models or quantization.
 
 ## Recommended execution order
 
@@ -127,6 +151,11 @@ python -m frontier_interp.cli --config configs/debug_multimodel.yaml
 ### 6. Tier-1 paper core
 ```bash
 python -m frontier_interp.cli --config configs/tier1_core.yaml
+```
+
+### 7. Submission-ready balanced run
+```bash
+python -m frontier_interp.cli --config configs/submit_ready_balanced.yaml
 ```
 
 ## Included model registry
@@ -182,6 +211,9 @@ Each run writes to `outputs/<run_name>/`:
 - `seed_level_summary.csv`
 - `seed_aggregated_summary.csv`
 - `signed_gap_tests.csv`
+- `REPORT.md`
+- `paper_tables/*.tex`
+- `submission_bundle/*`
 - `plots/*.png`
 - `artifacts/*.jsonl`
 - `logs/run.log`
@@ -207,3 +239,14 @@ This repository is intended to be **near-final research code**, not a toy notebo
 These are designed to answer two likely reviewer questions early:
 1. does the effect survive out-of-family evaluation?
 2. is the result just a small-data artifact?
+
+
+## Optional-pathway validation gates
+
+Self-report experiments are kept as first-class raw outputs, but the submission-facing report can automatically **promote** only those self-report groupings that pass validation thresholds from the config. This is intended to prevent weak optional pathways from contaminating the confirmatory story while still preserving all exploratory artifacts.
+
+Key knobs live under `validation:` in the YAML config. The runner emits:
+- `self_reflection_validation.csv`
+- `VALIDATION_CHECKLIST.md`
+
+These files document which optional pathways were promoted and which remained exploratory.

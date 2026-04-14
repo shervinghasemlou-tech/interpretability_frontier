@@ -25,31 +25,31 @@ models:
 datasets:
   - registry_key: wikitext103_validation
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: hellaswag_validation
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: piqa_validation
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: arc_easy_validation
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: arc_challenge_validation
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: gsm8k_test
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: alpaca_train
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: ultrachat_train_sft
     enabled: true
-    num_samples: 128
+    use_full_split: true
   - registry_key: handcrafted_diagnostics
     enabled: true
-    num_samples: 64
+    use_full_split: true
 
 sweep:
   seeds: [0, 1, 2, 3, 4]
@@ -78,6 +78,9 @@ outputs:
   save_plots: true
   save_per_example_artifacts: true
   save_model_cards: true
+  save_markdown_report: true
+  save_latex_tables: true
+  save_submission_bundle: true
 
 stats:
   bootstrap_iterations: 2000
@@ -90,3 +93,21 @@ runtime:
   allow_fp16: true
   trust_remote_code: true
   compile_interpreters: false
+
+self_reflection:
+  enabled: true
+  modes: [self_probe_behavior, self_probe_mechanism, self_report_behavior, self_report_mechanism]
+  probe_arches: [linear, mlp]
+  probe_sizes: [64, 128]
+  probe_steps: 200
+  report_num_examples: 32
+  report_max_new_tokens: 8
+  report_temperature: 0.0
+
+validation:
+  min_num_rows: 16
+  self_report_min_parsed_ok: 0.8
+  self_report_min_exact_match_to_target: 0.2
+  self_report_min_exact_match_to_gold: 0.2
+  self_report_mechanism_min_within_one: 0.35
+  promote_only_validated_optional: true

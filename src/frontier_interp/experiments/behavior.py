@@ -31,7 +31,7 @@ def train_behavior_interpreter(interpreter, target_model, train_batches, steps: 
         token_batch = target_model.tokenize_batch([ex.text for ex in batch["examples"]], batch["max_prompt_len"])
 
         with torch.no_grad():
-            target_logits, _ = target_model.extract_logits_and_attentions(token_batch, output_attentions=False)
+            target_logits, _ = target_model.extract_logits_and_attentions(token_batch)
 
         pred_logits = interpreter.forward_behavior(token_batch["input_ids"])
         loss = F.kl_div(
@@ -77,7 +77,7 @@ def eval_behavior_interpreter(interpreter, target_model, val_batches, baseline_l
     for batch in val_batches:
         texts = [ex.text for ex in batch["examples"]]
         token_batch = target_model.tokenize_batch(texts, batch["max_prompt_len"])
-        target_logits, _ = target_model.extract_logits_and_attentions(token_batch, output_attentions=False)
+        target_logits, _ = target_model.extract_logits_and_attentions(token_batch)
         pred_logits = interpreter.forward_behavior(token_batch["input_ids"])
 
         metrics = behavior_distillation_metrics(pred_logits, target_logits)

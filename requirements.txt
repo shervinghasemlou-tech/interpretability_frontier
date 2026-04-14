@@ -8,3 +8,4 @@ matplotlib
 scipy
 tqdm
 accelerate
+bitsandbytes
