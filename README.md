@@ -1,18 +1,18 @@
 # Frontier Mechanistic Compressibility
 
-A config-driven codebase for studying **mechanistic compressibility** and **self-interpretability gaps** in sub-1B open-weight language models.
+A config-driven research codebase for studying **mechanistic compressibility** and **self-interpretability gaps** in sub-1B open-weight language models.
 
-This repository is designed to be the experimental backbone for a paper on the distribution of internal compressibility across models, prompt families, mechanism types, and interpreter capacities.
+This repository is designed to be the experimental backbone for a paper on the distribution of internal compressibility across models, datasets, mechanism types, prompt families, interpreter capacities, and reviewer-facing controls.
 
-## Key design goals
+## Design goals
 
-- **One-command execution**: pass a single config file; everything else is in the config.
-- **Model-agnostic**: supports a registry of sub-1B OSS models and base/instruct pairs.
+- **One-command execution**: pass a single config file; everything else lives in YAML.
+- **Model-agnostic**: supports a curated registry of sub-1B OSS base/instruct or base/chat pairs.
 - **Dataset-agnostic**: supports handwritten diagnostics plus open datasets from Hugging Face.
-- **Ablation-first**: controls, counterfactuals, and reviewer-facing objections are first-class configuration items.
-- **Paper-ready outputs**: raw CSVs, summary CSVs, plots, logs, and a minimal paper scaffold.
+- **Ablation-first**: counterarguments, controls, and counterfactuals are first-class config items.
+- **Paper-ready outputs**: raw CSVs, seed-level summaries, FDR-corrected tests, plots, logs, config snapshots, and per-example artifacts.
 
-## What this repository can do
+## What the repository can do
 
 - Distill behavior from a frozen target model into a smaller interpreter.
 - Predict internal mechanisms from the same frozen target model using the **same interpreter family**.
@@ -24,14 +24,33 @@ This repository is designed to be the experimental backbone for a paper on the d
   - layers / heads
   - mechanism types
   - controls and counterfactuals
+  - architecture controls
 - Compute:
   - mean / median gap
   - 90th percentile gap
   - easiest / hardest mechanism
   - fraction of mechanisms harder than behavior
   - layerwise and headwise summaries
-  - bootstrap confidence intervals and nonparametric tests
+  - bootstrap confidence intervals and FDR-corrected nonparametric tests
 - Generate plots for paper figures.
+
+## Mechanism views currently implemented
+
+The main predictor still outputs an attention matrix, but the code now supports several **mechanism views** over that object:
+
+- `attention_probs`: full attention matrix matching
+- `attention_top1`: top-attended-token prediction
+- `attention_entropy`: row-wise entropy prediction
+
+This lets the paper separate “full probability reconstruction” from simpler derived mechanism targets.
+
+## Behavioral evaluation currently implemented
+
+- **KL distillation** over the frozen target model's next-token distribution
+- **Restricted-choice evaluation** for datasets such as HellaSwag, PIQA, and ARC
+  - target/interpreter choice agreement
+  - rank correlation
+  - accuracy against gold when available
 
 ## Repository layout
 
@@ -83,19 +102,29 @@ Everything about the run lives in the config, including:
 python -m frontier_interp.cli --config configs/debug_qwen.yaml
 ```
 
-### 2. Cross-model debugging
+### 2. Restricted-choice sanity test
+```bash
+python -m frontier_interp.cli --config configs/debug_choice_eval.yaml
+```
+
+### 3. Mechanism-view ablation
+```bash
+python -m frontier_interp.cli --config configs/ablate_mechanism_views.yaml
+```
+
+### 4. Architecture and control ablations
+```bash
+python -m frontier_interp.cli --config configs/counterfactual_controls.yaml
+```
+
+### 5. Cross-model debugging
 ```bash
 python -m frontier_interp.cli --config configs/debug_multimodel.yaml
 ```
 
-### 3. Tier-1 paper core
+### 6. Tier-1 paper core
 ```bash
 python -m frontier_interp.cli --config configs/tier1_core.yaml
-```
-
-### 4. Controls / counterfactuals
-```bash
-python -m frontier_interp.cli --config configs/counterfactual_controls.yaml
 ```
 
 ## Included model registry
@@ -113,14 +142,7 @@ The registry includes a deliberate mix of base / instruct or base / chat pairs u
 - `EleutherAI/pythia-410m`
 - `EleutherAI/pythia-410m-deduped`
 
-These choices emphasize:
-- modern compact base / instruct pairs,
-- architectural diversity,
-- and at least one family explicitly designed for interpretability research.
-
 ## Included dataset families
-
-The repository supports both a handwritten diagnostic suite and OSS datasets.
 
 ### Handwritten diagnostics
 - factual continuations
@@ -137,25 +159,16 @@ The repository supports both a handwritten diagnostic suite and OSS datasets.
 - Alpaca
 - UltraChat 200k
 
-## Controls and counterfactuals supported in config
+## Counterarguments and controls supported
 
 - label shuffle
-- head shuffle
-- layer shuffle
 - random target matrices
 - diagonal / causal attention baseline
-- position-only interpreter
-- architecture controls (linear / MLP / transformer)
-- train-on-family / test-on-family transfer
+- architecture controls (`transformer`, `mlp`, `position_only`)
+- restricted-choice behavioral evaluation
 - mechanism complexity covariates
-
-## Notes on philosophy
-
-This codebase is built around a **distributional** view of self-interpretability. It does **not** assume that all internal mechanisms are uniformly harder than behavior. Instead, it measures a spectrum of compressibility and focuses especially on:
-
-- average-case gap,
-- upper-tail gap,
-- and the subset of mechanisms that remain hard under matched interpreter budgets.
+- multiple mechanism views over attention
+- FDR-corrected signed-gap tests
 
 ## Outputs
 
@@ -164,26 +177,20 @@ Each run writes to `outputs/<run_name>/`:
 - `summary_rows.csv`
 - `seed_level_summary.csv`
 - `seed_aggregated_summary.csv`
+- `signed_gap_tests.csv`
 - `plots/*.png`
+- `artifacts/*.jsonl`
 - `logs/run.log`
 - config snapshot
-
-## Paper scaffold
-
-The `paper/` folder contains a simple LaTeX skeleton that mirrors the intended narrative:
-- abstract
-- introduction
-- related work
-- methods
-- results
-- limitations
-- appendix
+- model-card snapshots
 
 ## Caveat
 
-This repository aims to be **near-final research code**, not a toy notebook. It is intentionally modular and ablation-heavy. Full runs over many models, datasets, and heads can be expensive. The provided configs are split into:
-- debugging
+This repository is intended to be **near-final research code**, not a toy notebook. Some larger reviewer-facing experiments remain computationally expensive, so the configs are split into:
+- smoke tests
+- restricted-choice debugging
+- mechanism-view ablations
+- architecture/control ablations
+- cross-model debugging
 - tier-1 core experiments
-- counterfactuals
-- full paper sweeps
-
+- full-paper template

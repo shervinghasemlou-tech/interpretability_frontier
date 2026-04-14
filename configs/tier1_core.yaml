@@ -1,4 +1,3 @@
-
 description: Tier-1 core paper experiments across several base/instruct or base/deduped pairs.
 models:
   - registry_key: qwen25_05b_base
@@ -39,7 +38,7 @@ sweep:
   interpreter_sizes: [64, 128]
   limit_layers: 4
   limit_heads: 8
-  mechanism_types: [attention_probs]
+  mechanism_types: [attention_probs, attention_top1, attention_entropy]
   interpreter_arches: [transformer]
   controls: [none]
 
@@ -49,17 +48,19 @@ training:
   batch_size: 4
   lr: 0.0003
   weight_decay: 0.01
-  max_prompt_len: 96
+  max_prompt_len: 128
   interpreter_layers: 2
   interpreter_heads: 4
   dropout: 0.0
+  behavior_objective: kl_distill
 
 outputs:
   root_dir: outputs
   run_name: tier1_core
   save_checkpoints: true
   save_plots: true
-  save_per_example_artifacts: false
+  save_per_example_artifacts: true
+  save_model_cards: true
 
 stats:
   bootstrap_iterations: 1000

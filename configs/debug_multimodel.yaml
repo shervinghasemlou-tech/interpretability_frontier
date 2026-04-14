@@ -1,4 +1,3 @@
-
 description: Debugging run across a few representative model families.
 models:
   - registry_key: qwen25_05b_base
@@ -12,18 +11,21 @@ datasets:
   - registry_key: handcrafted_diagnostics
     enabled: true
     num_samples: 64
+  - registry_key: hellaswag_validation
+    enabled: true
+    num_samples: 24
 
 sweep:
   seeds: [0]
   interpreter_sizes: [64]
   limit_layers: 4
   limit_heads: 8
-  mechanism_types: [attention_probs]
+  mechanism_types: [attention_probs, attention_top1]
   interpreter_arches: [transformer, mlp]
   controls: [none, label_shuffle]
 
 training:
-  behavior_steps: 250
+  behavior_steps: 200
   mechanism_steps: 100
   batch_size: 4
   lr: 0.0003
@@ -32,13 +34,15 @@ training:
   interpreter_layers: 2
   interpreter_heads: 4
   dropout: 0.0
+  behavior_objective: kl_distill
 
 outputs:
   root_dir: outputs
   run_name: debug_multimodel
   save_checkpoints: true
   save_plots: true
-  save_per_example_artifacts: false
+  save_per_example_artifacts: true
+  save_model_cards: true
 
 stats:
   bootstrap_iterations: 100

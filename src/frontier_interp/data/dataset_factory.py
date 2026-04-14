@@ -1,4 +1,3 @@
-
 """Dataset loading and normalization.
 
 This module keeps the repository dataset-agnostic. The experiment code consumes a
@@ -9,7 +8,6 @@ isolated here.
 from __future__ import annotations
 
 from typing import List
-import random
 
 from datasets import load_dataset
 
@@ -18,8 +16,10 @@ from frontier_interp.data.prompts import HANDCRAFTED_PROMPTS
 from frontier_interp.registries.datasets import resolve_dataset_spec
 
 
+
 def _trim(text: str) -> str:
     return " ".join(str(text).split())
+
 
 
 def load_examples_from_spec(dataset_spec) -> List[Example]:
@@ -46,19 +46,14 @@ def load_examples_from_spec(dataset_spec) -> List[Example]:
     raise ValueError(f"Unsupported loader: {loader}")
 
 
+
 def _load_handcrafted(dataset_spec) -> List[Example]:
     examples: List[Example] = []
     for family, prompts in HANDCRAFTED_PROMPTS.items():
-        for p in prompts[:dataset_spec.num_samples]:
-            examples.append(
-                Example(
-                    text=p,
-                    family=family,
-                    source="handcrafted_diagnostics",
-                    task_type="prompt_suite",
-                )
-            )
+        for p in prompts[: dataset_spec.num_samples]:
+            examples.append(Example(text=p, family=family, source="handcrafted_diagnostics", task_type="prompt_suite"))
     return examples
+
 
 
 def _load_wikitext(dataset_spec, registry) -> List[Example]:
@@ -71,6 +66,7 @@ def _load_wikitext(dataset_spec, registry) -> List[Example]:
         if len(out) >= dataset_spec.num_samples:
             break
     return out
+
 
 
 def _load_hellaswag(dataset_spec, registry) -> List[Example]:
@@ -86,6 +82,7 @@ def _load_hellaswag(dataset_spec, registry) -> List[Example]:
     return out
 
 
+
 def _load_piqa(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], split=dataset_spec.split or registry["default_split"])
     out = []
@@ -97,6 +94,7 @@ def _load_piqa(dataset_spec, registry) -> List[Example]:
         if len(out) >= dataset_spec.num_samples:
             break
     return out
+
 
 
 def _load_arc(dataset_spec, registry) -> List[Example]:
@@ -117,6 +115,7 @@ def _load_arc(dataset_spec, registry) -> List[Example]:
     return out
 
 
+
 def _load_gsm8k(dataset_spec, registry) -> List[Example]:
     ds = load_dataset(registry["dataset_name"], registry["subset"], split=dataset_spec.split or registry["default_split"])
     out = []
@@ -127,6 +126,7 @@ def _load_gsm8k(dataset_spec, registry) -> List[Example]:
         if len(out) >= dataset_spec.num_samples:
             break
     return out
+
 
 
 def _load_alpaca(dataset_spec, registry) -> List[Example]:
@@ -140,6 +140,7 @@ def _load_alpaca(dataset_spec, registry) -> List[Example]:
         if len(out) >= dataset_spec.num_samples:
             break
     return out
+
 
 
 def _load_ultrachat(dataset_spec, registry) -> List[Example]:

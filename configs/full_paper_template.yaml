@@ -56,7 +56,7 @@ sweep:
   interpreter_sizes: [64, 128]
   limit_layers: -1
   limit_heads: -1
-  mechanism_types: [attention_probs]
+  mechanism_types: [attention_probs, attention_top1, attention_entropy]
   interpreter_arches: [transformer, mlp]
   controls: [none, label_shuffle, random_target]
 
@@ -77,6 +77,7 @@ outputs:
   save_checkpoints: true
   save_plots: true
   save_per_example_artifacts: true
+  save_model_cards: true
 
 stats:
   bootstrap_iterations: 2000

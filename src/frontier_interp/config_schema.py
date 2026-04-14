@@ -1,9 +1,11 @@
-
 """Typed configuration loading for all experiments.
 
-The repository intentionally centralizes nearly all experiment behavior in YAML.
-The CLI takes a single ``--config`` argument, loads it into these dataclasses,
-and passes the structured config through the rest of the pipeline.
+Nearly all experiment behavior is driven by YAML so that the CLI remains simple:
+
+    python -m frontier_interp.cli --config <path-to-yaml>
+
+The code is intentionally explicit rather than clever because reproducibility is
+more important here than minimizing boilerplate.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ class SweepSpec:
     limit_heads: int = 8
     mechanism_types: List[str] = field(default_factory=lambda: ["attention_probs"])
     interpreter_arches: List[str] = field(default_factory=lambda: ["transformer"])
-    controls: List[str] = field(default_factory=list)
+    controls: List[str] = field(default_factory=lambda: ["none"])
 
 
 @dataclass
@@ -55,6 +57,7 @@ class TrainingSpec:
     interpreter_layers: int = 2
     interpreter_heads: int = 4
     dropout: float = 0.0
+    behavior_objective: str = "kl_distill"  # options: kl_distill, restricted_choice_eval
 
 
 @dataclass
@@ -63,7 +66,8 @@ class OutputSpec:
     run_name: str = "debug_run"
     save_checkpoints: bool = True
     save_plots: bool = True
-    save_per_example_artifacts: bool = False
+    save_per_example_artifacts: bool = True
+    save_model_cards: bool = True
 
 
 @dataclass
@@ -97,14 +101,11 @@ class ExperimentConfig:
 
 
 def _load_dataclass(cls, data: Dict[str, Any]):
-    """Recursively materialize a dataclass from a YAML-derived dictionary."""
     kwargs = {}
     for name, field_info in cls.__dataclass_fields__.items():
         if name not in data:
             continue
         value = data[name]
-        field_type = field_info.type
-
         if name == "models":
             kwargs[name] = [ModelSpec(**x) for x in value]
         elif name == "datasets":
@@ -122,6 +123,7 @@ def _load_dataclass(cls, data: Dict[str, Any]):
         else:
             kwargs[name] = value
     return cls(**kwargs)
+
 
 
 def load_config(path: str) -> ExperimentConfig:

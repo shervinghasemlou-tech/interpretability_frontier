@@ -1,4 +1,4 @@
-description: Control and counterfactual ablations for reviewer-facing objections.
+description: Compare multiple attention-based mechanism views under matched interpreters.
 models:
   - registry_key: qwen25_05b_base
     enabled: true
@@ -12,22 +12,19 @@ datasets:
   - registry_key: wikitext103_validation
     enabled: true
     num_samples: 32
-  - registry_key: hellaswag_validation
-    enabled: true
-    num_samples: 24
 
 sweep:
-  seeds: [0, 1, 2]
+  seeds: [0, 1]
   interpreter_sizes: [64]
   limit_layers: 4
   limit_heads: 8
-  mechanism_types: [attention_probs, attention_top1]
-  interpreter_arches: [transformer, mlp, position_only]
-  controls: [none, label_shuffle, random_target, diagonal_baseline, causal_uniform]
+  mechanism_types: [attention_probs, attention_top1, attention_entropy]
+  interpreter_arches: [transformer]
+  controls: [none]
 
 training:
-  behavior_steps: 400
-  mechanism_steps: 180
+  behavior_steps: 300
+  mechanism_steps: 120
   batch_size: 4
   lr: 0.0003
   weight_decay: 0.01
@@ -39,14 +36,14 @@ training:
 
 outputs:
   root_dir: outputs
-  run_name: counterfactual_controls
+  run_name: ablate_mechanism_views
   save_checkpoints: true
   save_plots: true
   save_per_example_artifacts: true
   save_model_cards: true
 
 stats:
-  bootstrap_iterations: 500
+  bootstrap_iterations: 200
   confidence_level: 0.95
   fdr_method: bh
   primary_metrics: [mean_gap, p90_gap, frac_hard_heads]

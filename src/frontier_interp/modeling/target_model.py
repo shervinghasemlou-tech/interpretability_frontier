@@ -1,21 +1,23 @@
+"""Target model loading and frozen extraction helpers.
 
-"""Target model loading and frozen extraction helpers."""
+This wrapper hides tokenizer quirks and provides helper methods used by both the
+behavioral and mechanistic experiments. Keeping these utilities centralized is
+important because they define what "matched comparison" means.
+"""
 
 from __future__ import annotations
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, List, Tuple
 
 import torch
+import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from frontier_interp.registries.models import resolve_model_spec
 
 
 class FrozenTargetModel:
-    """Wrapper around a frozen open-weight causal LM.
-
-    The wrapper hides tokenizer quirks, dtype decisions, and attention extraction.
-    """
+    """Thin wrapper around a frozen open-weight causal LM."""
 
     def __init__(self, model_key: str, runtime, model_spec_override=None):
         registry = resolve_model_spec(model_key)
@@ -73,3 +75,53 @@ class FrozenTargetModel:
         logits = outputs.logits.float()
         attentions = [a.float() for a in outputs.attentions]
         return logits, attentions
+
+    def _score_continuation_from_logits(self, logits: torch.Tensor, input_ids: torch.Tensor, prompt_len: int) -> float:
+        """Return average log-prob of the continuation portion of a prompt+choice string.
+
+        ``input_ids`` encodes the full prompt followed by a choice string. ``prompt_len`` is
+        the token count of the prompt-only encoding. We score choice tokens conditioned on
+        the prompt and prior choice tokens.
+        """
+        if prompt_len >= input_ids.shape[0]:
+            return float("-inf")
+        log_probs = F.log_softmax(logits[:-1], dim=-1)
+        total = 0.0
+        count = 0
+        for pos in range(prompt_len, input_ids.shape[0]):
+            prev_pos = pos - 1
+            total += float(log_probs[prev_pos, input_ids[pos]].item())
+            count += 1
+        return total / max(count, 1)
+
+    @torch.no_grad()
+    def score_choices_with_target(self, prompt: str, choices: List[str], max_prompt_len: int) -> List[float]:
+        """Score answer choices using the frozen target model itself."""
+        prompt_ids = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_len)["input_ids"][0]
+        prompt_len = int(prompt_ids.shape[0])
+        scores = []
+        for choice in choices:
+            full = prompt + " " + choice
+            toks = self.tokenizer(full, return_tensors="pt", truncation=True, max_length=max_prompt_len)
+            toks = {k: v.to(self.device) for k, v in toks.items()}
+            outputs = self.model(**toks, use_cache=False, return_dict=True)
+            scores.append(self._score_continuation_from_logits(outputs.logits[0].float(), toks["input_ids"][0], prompt_len))
+        return scores
+
+    @torch.no_grad()
+    def score_choices_with_interpreter(self, interpreter, prompt: str, choices: List[str], max_prompt_len: int) -> List[float]:
+        """Score answer choices using an interpreter's behavioral head.
+
+        This lets us evaluate behavior in a restricted-choice setting without changing the
+        interpreter architecture. The interpreter still predicts logits token-by-token.
+        """
+        prompt_ids = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_len)["input_ids"][0]
+        prompt_len = int(prompt_ids.shape[0])
+        scores = []
+        for choice in choices:
+            full = prompt + " " + choice
+            toks = self.tokenizer(full, return_tensors="pt", truncation=True, max_length=max_prompt_len)
+            input_ids = toks["input_ids"].to(self.device)
+            logits = interpreter.forward_behavior(input_ids)[0].float()
+            scores.append(self._score_continuation_from_logits(logits, input_ids[0], prompt_len))
+        return scores

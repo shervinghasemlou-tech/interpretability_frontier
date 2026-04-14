@@ -1,5 +1,4 @@
-
-"""Statistical summaries and bootstrap intervals."""
+"""Statistical summaries, bootstrap intervals, and multiple-testing correction."""
 
 from __future__ import annotations
 
@@ -24,10 +23,31 @@ def bootstrap_ci(values: Iterable[float], confidence_level: float = 0.95, num_bo
     return float(lo), float(hi)
 
 
+def benjamini_hochberg(p_values: List[float]) -> List[float]:
+    """Benjamini-Hochberg FDR correction.
+
+    Returns q-values aligned to the input order.
+    """
+    arr = np.asarray(p_values, dtype=np.float64)
+    n = len(arr)
+    order = np.argsort(arr)
+    ranked = arr[order]
+    q = np.empty(n, dtype=np.float64)
+    prev = 1.0
+    for i in range(n - 1, -1, -1):
+        rank = i + 1
+        val = ranked[i] * n / rank
+        prev = min(prev, val)
+        q[i] = prev
+    out = np.empty(n, dtype=np.float64)
+    out[order] = np.clip(q, 0.0, 1.0)
+    return out.tolist()
+
+
 def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
     grouped = defaultdict(list)
     for r in raw_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"])].append(r)
+        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r)
 
     summary = []
     for key, rows in grouped.items():
@@ -40,6 +60,7 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
             "family": key[2],
             "mechanism_type": key[3],
             "interpreter_arch": key[4],
+            "control": key[5],
             "num_rows": len(rows),
             "mean_gap": float(np.mean(gaps)),
             "median_gap": float(np.median(gaps)),
@@ -57,7 +78,7 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
 def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
     grouped = defaultdict(list)
     for r in raw_rows:
-        grouped[(r["model_key"], r["seed"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"])].append(r)
+        grouped[(r["model_key"], r["seed"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r)
 
     rows = []
     for key, items in grouped.items():
@@ -69,6 +90,7 @@ def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
             "family": key[3],
             "mechanism_type": key[4],
             "interpreter_arch": key[5],
+            "control": key[6],
             "mean_gap": float(np.mean(gaps)),
             "median_gap": float(np.median(gaps)),
             "p90_gap": float(np.quantile(gaps, 0.9)),
@@ -81,7 +103,7 @@ def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
 def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0.95, bootstrap_iterations: int = 1000) -> List[Dict]:
     grouped = defaultdict(list)
     for r in seed_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"])].append(r)
+        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r)
 
     out = []
     for key, rows in grouped.items():
@@ -94,6 +116,7 @@ def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0
             "family": key[2],
             "mechanism_type": key[3],
             "interpreter_arch": key[4],
+            "control": key[5],
             "num_seeds": len(rows),
             "mean_gap_over_seeds": float(np.mean(mean_gaps)),
             "std_gap_over_seeds": float(np.std(mean_gaps)),
@@ -105,14 +128,11 @@ def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0
     return out
 
 
-def signed_gap_test(seed_rows: List[Dict]) -> List[Dict]:
-    """Perform a Wilcoxon signed-rank test on seed-level mean gaps against zero.
-
-    This uses seed-level aggregates instead of treating head-level rows as iid.
-    """
+def signed_gap_test(seed_rows: List[Dict], fdr_method: str = "bh") -> List[Dict]:
+    """Perform a Wilcoxon signed-rank test on seed-level mean gaps against zero."""
     grouped = defaultdict(list)
     for r in seed_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"])].append(r["mean_gap"])
+        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r["mean_gap"])
 
     out = []
     for key, vals in grouped.items():
@@ -129,6 +149,17 @@ def signed_gap_test(seed_rows: List[Dict]) -> List[Dict]:
             "family": key[2],
             "mechanism_type": key[3],
             "interpreter_arch": key[4],
+            "control": key[5],
             "p_value": p,
         })
+
+    finite_p = [r["p_value"] for r in out if not np.isnan(r["p_value"])]
+    q_values = benjamini_hochberg(finite_p) if finite_p else []
+    j = 0
+    for r in out:
+        if np.isnan(r["p_value"]):
+            r["q_value"] = float("nan")
+        else:
+            r["q_value"] = q_values[j]
+            j += 1
     return out
