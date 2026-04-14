@@ -36,19 +36,21 @@ from frontier_interp.utils.time import ProgressTracker
 from frontier_interp.registries.models import resolve_model_spec
 
 
-def _bucket_examples(examples, max_prompt_len: int):
+def _bucket_examples(examples, max_prompt_len: int, batch_size: int):
     by_bucket = defaultdict(list)
     for ex in examples:
         by_bucket[(ex.family, ex.source)].append(ex)
 
     batches = []
+    batch_size = max(1, int(batch_size))
     for (family, source), items in by_bucket.items():
-        batches.append({
-            "family": family,
-            "source": source,
-            "examples": items,
-            "max_prompt_len": max_prompt_len,
-        })
+        for i in range(0, len(items), batch_size):
+            batches.append({
+                "family": family,
+                "source": source,
+                "examples": items[i : i + batch_size],
+                "max_prompt_len": max_prompt_len,
+            })
     return batches
 
 
@@ -223,8 +225,8 @@ def run_experiment(config: ExperimentConfig):
                 for train_size in train_size_options:
                     curr_train_examples = _subsample_examples(split_train_examples, train_size, config.sweep.dataset_scaling.stratify_by_family)
                     curr_val_examples = split_val_examples if config.sweep.dataset_scaling.eval_uses_full_validation else _subsample_examples(split_val_examples, train_size, config.sweep.dataset_scaling.stratify_by_family)
-                    train_batches = _bucket_examples(curr_train_examples, config.training.max_prompt_len)
-                    val_batches = _bucket_examples(curr_val_examples, config.training.max_prompt_len)
+                    train_batches = _bucket_examples(curr_train_examples, config.training.max_prompt_len, config.training.batch_size)
+                    val_batches = _bucket_examples(curr_val_examples, config.training.max_prompt_len, config.training.batch_size)
                     logger.log(f"Train size setting={train_size} -> train_examples={len(curr_train_examples)} val_examples={len(curr_val_examples)}")
 
                     for arch in config.sweep.interpreter_arches:

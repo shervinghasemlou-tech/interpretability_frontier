@@ -65,15 +65,15 @@ class FrozenTargetModel:
         return {k: v.to(self.device) for k, v in toks.items()}
 
     @torch.no_grad()
-    def extract_logits_and_attentions(self, token_batch: Dict[str, torch.Tensor]):
+    def extract_logits_and_attentions(self, token_batch: Dict[str, torch.Tensor], *, output_attentions: bool = True):
         outputs = self.model(
             **token_batch,
-            output_attentions=True,
+            output_attentions=output_attentions,
             use_cache=False,
             return_dict=True,
         )
         logits = outputs.logits.float()
-        attentions = [a.float() for a in outputs.attentions]
+        attentions = [a.float() for a in outputs.attentions] if output_attentions and outputs.attentions is not None else []
         return logits, attentions
 
     def _score_continuation_from_logits(self, logits: torch.Tensor, input_ids: torch.Tensor, prompt_len: int) -> float:
