@@ -36,6 +36,22 @@ class DatasetSpec:
 
 
 @dataclass
+class CrossFamilySplitSpec:
+    name: str
+    train_families: List[str] = field(default_factory=lambda: ["ALL"])
+    eval_families: List[str] = field(default_factory=lambda: ["ALL"])
+    enabled: bool = True
+
+
+@dataclass
+class DatasetScaleSpec:
+    enabled: bool = False
+    train_sizes: List[int] = field(default_factory=lambda: [16, 32, 64, 128])
+    stratify_by_family: bool = True
+    eval_uses_full_validation: bool = True
+
+
+@dataclass
 class SweepSpec:
     seeds: List[int] = field(default_factory=lambda: [0, 1, 2])
     interpreter_sizes: List[int] = field(default_factory=lambda: [64, 128])
@@ -44,6 +60,8 @@ class SweepSpec:
     mechanism_types: List[str] = field(default_factory=lambda: ["attention_probs"])
     interpreter_arches: List[str] = field(default_factory=lambda: ["transformer"])
     controls: List[str] = field(default_factory=lambda: ["none"])
+    cross_family_splits: List[CrossFamilySplitSpec] = field(default_factory=lambda: [CrossFamilySplitSpec(name="all_to_all")])
+    dataset_scaling: DatasetScaleSpec = field(default_factory=DatasetScaleSpec)
 
 
 @dataclass
@@ -102,7 +120,7 @@ class ExperimentConfig:
 
 def _load_dataclass(cls, data: Dict[str, Any]):
     kwargs = {}
-    for name, field_info in cls.__dataclass_fields__.items():
+    for name in cls.__dataclass_fields__:
         if name not in data:
             continue
         value = data[name]
@@ -111,7 +129,14 @@ def _load_dataclass(cls, data: Dict[str, Any]):
         elif name == "datasets":
             kwargs[name] = [DatasetSpec(**x) for x in value]
         elif name == "sweep":
-            kwargs[name] = SweepSpec(**value)
+            sweep_kwargs = dict(value)
+            cfs = sweep_kwargs.get("cross_family_splits")
+            if cfs is not None:
+                sweep_kwargs["cross_family_splits"] = [CrossFamilySplitSpec(**x) for x in cfs]
+            dss = sweep_kwargs.get("dataset_scaling")
+            if dss is not None:
+                sweep_kwargs["dataset_scaling"] = DatasetScaleSpec(**dss)
+            kwargs[name] = SweepSpec(**sweep_kwargs)
         elif name == "training":
             kwargs[name] = TrainingSpec(**value)
         elif name == "outputs":

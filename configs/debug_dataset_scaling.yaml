@@ -1,22 +1,9 @@
-description: Tier-1 core paper experiments across several base/instruct or base/deduped pairs.
+description: Debug dataset-size scaling with proper MCQ evaluation.
 models:
   - registry_key: qwen25_05b_base
     enabled: true
-  - registry_key: qwen25_05b_instruct
-    enabled: true
-  - registry_key: smollm2_360m_base
-    enabled: true
-  - registry_key: smollm2_360m_instruct
-    enabled: true
-  - registry_key: pythia_410m
-    enabled: true
-  - registry_key: pythia_410m_deduped
-    enabled: true
 
 datasets:
-  - registry_key: wikitext103_validation
-    enabled: true
-    num_samples: 64
   - registry_key: hellaswag_validation
     enabled: true
     num_samples: 64
@@ -26,28 +13,22 @@ datasets:
   - registry_key: arc_challenge_validation
     enabled: true
     num_samples: 64
-  - registry_key: gsm8k_test
-    enabled: true
-    num_samples: 64
   - registry_key: handcrafted_diagnostics
     enabled: true
     num_samples: 64
 
 sweep:
-  seeds: [0, 1, 2]
-  interpreter_sizes: [64, 128]
+  seeds: [0, 1]
+  interpreter_sizes: [64]
   limit_layers: 4
   limit_heads: 8
-  mechanism_types: [attention_probs, attention_top1, attention_entropy]
+  mechanism_types: [attention_probs]
   interpreter_arches: [transformer]
   controls: [none]
   cross_family_splits:
     - name: all_to_all
       train_families: [ALL]
       eval_families: [ALL]
-    - name: mcq_to_reasoning
-      train_families: [hellaswag, piqa, arc-challenge, arc-easy]
-      eval_families: [gsm8k, reasoning_like]
   dataset_scaling:
     enabled: true
     train_sizes: [16, 32, 64]
@@ -55,8 +36,8 @@ sweep:
     eval_uses_full_validation: true
 
 training:
-  behavior_steps: 800
-  mechanism_steps: 300
+  behavior_steps: 250
+  mechanism_steps: 100
   batch_size: 4
   lr: 0.0003
   weight_decay: 0.01
@@ -64,18 +45,18 @@ training:
   interpreter_layers: 2
   interpreter_heads: 4
   dropout: 0.0
-  behavior_objective: kl_distill
+  behavior_objective: restricted_choice_eval
 
 outputs:
   root_dir: outputs
-  run_name: tier1_core
+  run_name: debug_dataset_scaling
   save_checkpoints: true
   save_plots: true
   save_per_example_artifacts: true
   save_model_cards: true
 
 stats:
-  bootstrap_iterations: 1000
+  bootstrap_iterations: 100
   confidence_level: 0.95
   fdr_method: bh
   primary_metrics: [mean_gap, p90_gap, frac_hard_heads]

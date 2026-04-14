@@ -24,10 +24,6 @@ def bootstrap_ci(values: Iterable[float], confidence_level: float = 0.95, num_bo
 
 
 def benjamini_hochberg(p_values: List[float]) -> List[float]:
-    """Benjamini-Hochberg FDR correction.
-
-    Returns q-values aligned to the input order.
-    """
     arr = np.asarray(p_values, dtype=np.float64)
     n = len(arr)
     order = np.argsort(arr)
@@ -44,16 +40,26 @@ def benjamini_hochberg(p_values: List[float]) -> List[float]:
     return out.tolist()
 
 
+def _key(r: Dict):
+    return (
+        r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"],
+        r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full")
+    )
+
+
 def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
     grouped = defaultdict(list)
     for r in raw_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r)
+        grouped[_key(r)].append(r)
 
     summary = []
     for key, rows in grouped.items():
         gaps = np.array([r["gap"] for r in rows], dtype=np.float32)
         p90_gap = float(np.quantile(gaps, 0.9)) if len(gaps) else float("nan")
         lo, hi = bootstrap_ci(gaps)
+        def mean_metric(name):
+            vals = [r[name] for r in rows if name in r and not np.isnan(r[name])]
+            return float(np.mean(vals)) if vals else float("nan")
         summary.append({
             "model_key": key[0],
             "size": key[1],
@@ -61,6 +67,8 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
             "mechanism_type": key[3],
             "interpreter_arch": key[4],
             "control": key[5],
+            "split_name": key[6],
+            "train_size": key[7],
             "num_rows": len(rows),
             "mean_gap": float(np.mean(gaps)),
             "median_gap": float(np.median(gaps)),
@@ -71,6 +79,9 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
             "bootstrap_ci_hi": hi,
             "max_gap": float(np.max(gaps)),
             "min_gap": float(np.min(gaps)),
+            "behavior_choice_acc_vs_gold_mean": mean_metric("choice_acc_vs_gold"),
+            "target_choice_acc_vs_gold_mean": mean_metric("target_choice_acc_vs_gold"),
+            "behavior_choice_match_to_target_mean": mean_metric("choice_match_to_target"),
         })
     return summary
 
@@ -78,11 +89,14 @@ def summarize_raw_rows(raw_rows: List[Dict]) -> List[Dict]:
 def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
     grouped = defaultdict(list)
     for r in raw_rows:
-        grouped[(r["model_key"], r["seed"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r)
+        grouped[(r["model_key"], r["seed"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r)
 
     rows = []
     for key, items in grouped.items():
         gaps = np.array([r["gap"] for r in items], dtype=np.float32)
+        def mean_metric(name):
+            vals = [r[name] for r in items if name in r and not np.isnan(r[name])]
+            return float(np.mean(vals)) if vals else float("nan")
         rows.append({
             "model_key": key[0],
             "seed": key[1],
@@ -91,11 +105,16 @@ def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
             "mechanism_type": key[4],
             "interpreter_arch": key[5],
             "control": key[6],
+            "split_name": key[7],
+            "train_size": key[8],
             "mean_gap": float(np.mean(gaps)),
             "median_gap": float(np.median(gaps)),
             "p90_gap": float(np.quantile(gaps, 0.9)),
             "std_gap": float(np.std(gaps)),
             "frac_hard_heads": float(np.mean(gaps > 0.0)),
+            "behavior_choice_acc_vs_gold_mean": mean_metric("choice_acc_vs_gold"),
+            "target_choice_acc_vs_gold_mean": mean_metric("target_choice_acc_vs_gold"),
+            "behavior_choice_match_to_target_mean": mean_metric("choice_match_to_target"),
         })
     return rows
 
@@ -103,13 +122,16 @@ def summarize_by_seed(raw_rows: List[Dict]) -> List[Dict]:
 def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0.95, bootstrap_iterations: int = 1000) -> List[Dict]:
     grouped = defaultdict(list)
     for r in seed_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r)
+        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r)
 
     out = []
     for key, rows in grouped.items():
         mean_gaps = np.array([r["mean_gap"] for r in rows], dtype=np.float32)
         frac_hard = np.array([r["frac_hard_heads"] for r in rows], dtype=np.float32)
         lo, hi = bootstrap_ci(mean_gaps, confidence_level=confidence_level, num_bootstrap=bootstrap_iterations)
+        def mean_metric(name):
+            vals = [r[name] for r in rows if name in r and not np.isnan(r[name])]
+            return float(np.mean(vals)) if vals else float("nan")
         out.append({
             "model_key": key[0],
             "size": key[1],
@@ -117,6 +139,8 @@ def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0
             "mechanism_type": key[3],
             "interpreter_arch": key[4],
             "control": key[5],
+            "split_name": key[6],
+            "train_size": key[7],
             "num_seeds": len(rows),
             "mean_gap_over_seeds": float(np.mean(mean_gaps)),
             "std_gap_over_seeds": float(np.std(mean_gaps)),
@@ -124,15 +148,17 @@ def summarize_seed_aggregates(seed_rows: List[Dict], confidence_level: float = 0
             "std_frac_hard_over_seeds": float(np.std(frac_hard)),
             "bootstrap_ci_lo": lo,
             "bootstrap_ci_hi": hi,
+            "behavior_choice_acc_vs_gold_mean": mean_metric("behavior_choice_acc_vs_gold_mean"),
+            "target_choice_acc_vs_gold_mean": mean_metric("target_choice_acc_vs_gold_mean"),
+            "behavior_choice_match_to_target_mean": mean_metric("behavior_choice_match_to_target_mean"),
         })
     return out
 
 
 def signed_gap_test(seed_rows: List[Dict], fdr_method: str = "bh") -> List[Dict]:
-    """Perform a Wilcoxon signed-rank test on seed-level mean gaps against zero."""
     grouped = defaultdict(list)
     for r in seed_rows:
-        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"])].append(r["mean_gap"])
+        grouped[(r["model_key"], r["size"], r["family"], r["mechanism_type"], r["interpreter_arch"], r["control"], r.get("split_name", "all_to_all"), r.get("train_size", "full"))].append(r["mean_gap"])
 
     out = []
     for key, vals in grouped.items():
@@ -150,6 +176,8 @@ def signed_gap_test(seed_rows: List[Dict], fdr_method: str = "bh") -> List[Dict]
             "mechanism_type": key[3],
             "interpreter_arch": key[4],
             "control": key[5],
+            "split_name": key[6],
+            "train_size": key[7],
             "p_value": p,
         })
 

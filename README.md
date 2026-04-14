@@ -47,10 +47,12 @@ This lets the paper separate “full probability reconstruction” from simpler 
 ## Behavioral evaluation currently implemented
 
 - **KL distillation** over the frozen target model's next-token distribution
-- **Restricted-choice evaluation** for datasets such as HellaSwag, PIQA, and ARC
+- **Proper restricted-choice evaluation** for datasets such as HellaSwag, PIQA, and ARC
   - target/interpreter choice agreement
   - rank correlation
-  - accuracy against gold when available
+  - interpreter MCQ accuracy against gold
+  - target-model MCQ accuracy against gold
+- The summaries now surface MCQ accuracy explicitly instead of leaving it buried in per-example artifacts.
 
 ## Repository layout
 
@@ -168,6 +170,8 @@ The registry includes a deliberate mix of base / instruct or base / chat pairs u
 - restricted-choice behavioral evaluation
 - mechanism complexity covariates
 - multiple mechanism views over attention
+- cross-family generalization splits
+- dataset-size scaling sweeps
 - FDR-corrected signed-gap tests
 
 ## Outputs
@@ -194,3 +198,12 @@ This repository is intended to be **near-final research code**, not a toy notebo
 - cross-model debugging
 - tier-1 core experiments
 - full-paper template
+
+## New configs for reviewer-preemptive checks
+
+- `configs/debug_cross_family.yaml`: train on one family and evaluate on another
+- `configs/debug_dataset_scaling.yaml`: measure how the gap changes as train size scales
+
+These are designed to answer two likely reviewer questions early:
+1. does the effect survive out-of-family evaluation?
+2. is the result just a small-data artifact?
