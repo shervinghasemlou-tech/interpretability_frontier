@@ -45,6 +45,16 @@ def _resolve_torch_dtype(name: Optional[str]) -> Optional[torch.dtype]:
     return mapping[name]
 
 
+def _normalize_device_name(device: object) -> str:
+    if isinstance(device, int):
+        return f"cuda:{device}"
+    if isinstance(device, str):
+        if device == "cuda":
+            return "cuda:0"
+        return device
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 class FrozenTargetModel:
     """Thin wrapper around a frozen open-weight causal LM.
 
@@ -106,6 +116,11 @@ class FrozenTargetModel:
             load_kwargs["device_map"] = getattr(runtime, "device_map", None) or "auto"
             load_kwargs["dtype"] = "auto"
         else:
+            # Non-quantized runs default to explicit single-device placement unless
+            # the config explicitly requests a device map.
+            runtime_device_map = getattr(runtime, "device_map", None)
+            if runtime_device_map not in (None, "", "none"):
+                load_kwargs["device_map"] = runtime_device_map
             load_kwargs["torch_dtype"] = model_dtype
 
         self.model = AutoModelForCausalLM.from_pretrained(hf_name, **load_kwargs)
@@ -113,10 +128,30 @@ class FrozenTargetModel:
         for p in self.model.parameters():
             p.requires_grad = False
 
-        # Figure out where tokenized inputs should live. For device_map='auto', most small-GPU
-        # runs still need inputs on CUDA when available.
-        if getattr(runtime, "device_map", None) == "auto" or load_in_8bit or load_in_4bit:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        using_device_map = "device_map" in load_kwargs and load_kwargs.get("device_map") is not None
+
+        # Figure out where tokenized inputs should live.
+        if using_device_map and hasattr(self.model, "hf_device_map"):
+            # Keep token tensors on the same device as the embedding layer when
+            # Accelerate dispatches modules across CPU/GPU.
+            dm = getattr(self.model, "hf_device_map", {})
+            preferred_keys = (
+                "model.embed_tokens",
+                "embed_tokens",
+                "transformer.wte",
+                "model.model.embed_tokens",
+            )
+            embed_device = None
+            for k in preferred_keys:
+                if k in dm:
+                    embed_device = dm[k]
+                    break
+            if embed_device is None:
+                for v in dm.values():
+                    if v not in {"disk", "meta"}:
+                        embed_device = v
+                        break
+            self.device = _normalize_device_name(embed_device)
         elif runtime.device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
             self.model.to(self.device)
@@ -143,15 +178,15 @@ class FrozenTargetModel:
         return {k: v.to(self.device) for k, v in toks.items()}
 
     @torch.no_grad()
-    def extract_logits_and_attentions(self, token_batch: Dict[str, torch.Tensor]):
+    def extract_logits_and_attentions(self, token_batch: Dict[str, torch.Tensor], *, output_attentions: bool = True):
         outputs = self.model(
             **token_batch,
-            output_attentions=True,
+            output_attentions=output_attentions,
             use_cache=False,
             return_dict=True,
         )
         logits = outputs.logits.float()
-        attentions = [a.float() for a in outputs.attentions]
+        attentions = [a.float() for a in outputs.attentions] if output_attentions and outputs.attentions is not None else []
         return logits, attentions
 
     @torch.no_grad()

@@ -10,7 +10,7 @@ more important here than minimizing boilerplate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional
 import yaml
 
@@ -182,6 +182,143 @@ class ExperimentConfig:
     validation: ValidationSpec = field(default_factory=ValidationSpec)
 
 
+_ALL_NATURAL_FAMILIES = [
+    "wikitext",
+    "hellaswag",
+    "piqa",
+    "arc-easy",
+    "arc-challenge",
+    "gsm8k",
+    "alpaca",
+    "ultrachat",
+]
+
+
+def _pick_known_kwargs(cls, data: Dict[str, Any], aliases: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    aliases = aliases or {}
+    valid = {f.name for f in fields(cls)}
+    out: Dict[str, Any] = {}
+    for k, v in data.items():
+        kk = aliases.get(k, k)
+        if kk in valid:
+            out[kk] = v
+    return out
+
+
+def _normalize_family_selector(value: Any) -> List[str]:
+    if value is None:
+        raw = ["ALL"]
+    elif isinstance(value, list):
+        raw = value
+    else:
+        raw = [value]
+
+    out: List[str] = []
+    for x in raw:
+        s = str(x).strip()
+        low = s.lower()
+        if low in {"all", "all_to_all"}:
+            out.append("ALL")
+        elif low == "all_natural":
+            out.extend(_ALL_NATURAL_FAMILIES)
+        else:
+            out.append(s)
+    dedup: List[str] = []
+    for x in out:
+        if x not in dedup:
+            dedup.append(x)
+    return dedup or ["ALL"]
+
+
+def _normalize_cross_family_split(raw: Dict[str, Any], idx: int) -> Dict[str, Any]:
+    item = dict(raw)
+    if "train_families" not in item and "train_family" in item:
+        item["train_families"] = item.pop("train_family")
+    if "eval_families" not in item and "eval_family" in item:
+        item["eval_families"] = item.pop("eval_family")
+    item["train_families"] = _normalize_family_selector(item.get("train_families", ["ALL"]))
+    item["eval_families"] = _normalize_family_selector(item.get("eval_families", ["ALL"]))
+    if not item.get("name"):
+        train_name = "-".join(item["train_families"])
+        eval_name = "-".join(item["eval_families"])
+        item["name"] = f"split_{idx}_{train_name}_to_{eval_name}"
+    return _pick_known_kwargs(CrossFamilySplitSpec, item)
+
+
+def _normalize_sweep_kwargs(value: Dict[str, Any]) -> Dict[str, Any]:
+    sweep_kwargs = dict(value)
+
+    cfs = sweep_kwargs.get("cross_family_splits")
+    if cfs is not None:
+        sweep_kwargs["cross_family_splits"] = [
+            CrossFamilySplitSpec(**_normalize_cross_family_split(x, i))
+            for i, x in enumerate(cfs)
+        ]
+
+    dss = sweep_kwargs.get("dataset_scaling")
+    if dss is not None:
+        dss_kwargs = _pick_known_kwargs(
+            DatasetScaleSpec,
+            dss,
+            aliases={"eval_full_split": "eval_uses_full_validation"},
+        )
+        sweep_kwargs["dataset_scaling"] = DatasetScaleSpec(**dss_kwargs)
+
+    control_aliases = {
+        "shuffled_prompt_target": "label_shuffle",
+        "shuffled_head_id": "head_shuffle",
+        "randomized_target": "random_target",
+        "position_only": "diagonal_baseline",
+        "uniform_attention_baseline": "causal_uniform",
+    }
+    if "controls" in sweep_kwargs:
+        sweep_kwargs["controls"] = [control_aliases.get(c, c) for c in sweep_kwargs["controls"]]
+
+    arch_aliases = {"linear": "mlp"}
+    if "interpreter_arches" in sweep_kwargs:
+        mapped = [arch_aliases.get(a, a) for a in sweep_kwargs["interpreter_arches"]]
+        dedup: List[str] = []
+        for a in mapped:
+            if a not in dedup:
+                dedup.append(a)
+        sweep_kwargs["interpreter_arches"] = dedup
+
+    return _pick_known_kwargs(SweepSpec, sweep_kwargs)
+
+
+def _normalize_training_kwargs(value: Dict[str, Any]) -> Dict[str, Any]:
+    t = dict(value)
+    objectives = t.get("behavior_objectives")
+    if isinstance(objectives, list) and objectives:
+        t["behavior_objective"] = "kl_distill" if "kl_distill" in objectives else str(objectives[0])
+    return _pick_known_kwargs(TrainingSpec, t)
+
+
+def _normalize_output_kwargs(value: Dict[str, Any]) -> Dict[str, Any]:
+    return _pick_known_kwargs(
+        OutputSpec,
+        value,
+        aliases={
+            "save_report_markdown": "save_markdown_report",
+            "save_paper_tables": "save_latex_tables",
+        },
+    )
+
+
+def _normalize_validation_kwargs(value: Dict[str, Any]) -> Dict[str, Any]:
+    return _pick_known_kwargs(
+        ValidationSpec,
+        value,
+        aliases={
+            "min_rows_required": "min_num_rows",
+            "min_self_report_parse_rate": "self_report_min_parsed_ok",
+            "min_behavior_self_report_target_match": "self_report_min_exact_match_to_target",
+            "min_behavior_self_report_gold_match": "self_report_min_exact_match_to_gold",
+            "min_mechanism_self_report_within_one": "self_report_mechanism_min_within_one",
+        },
+    )
+
+
 def _load_dataclass(cls, data: Dict[str, Any]):
     kwargs = {}
     for name in cls.__dataclass_fields__:
@@ -189,30 +326,23 @@ def _load_dataclass(cls, data: Dict[str, Any]):
             continue
         value = data[name]
         if name == "models":
-            kwargs[name] = [ModelSpec(**x) for x in value]
+            kwargs[name] = [ModelSpec(**_pick_known_kwargs(ModelSpec, x)) for x in value]
         elif name == "datasets":
-            kwargs[name] = [DatasetSpec(**x) for x in value]
+            kwargs[name] = [DatasetSpec(**_pick_known_kwargs(DatasetSpec, x)) for x in value]
         elif name == "sweep":
-            sweep_kwargs = dict(value)
-            cfs = sweep_kwargs.get("cross_family_splits")
-            if cfs is not None:
-                sweep_kwargs["cross_family_splits"] = [CrossFamilySplitSpec(**x) for x in cfs]
-            dss = sweep_kwargs.get("dataset_scaling")
-            if dss is not None:
-                sweep_kwargs["dataset_scaling"] = DatasetScaleSpec(**dss)
-            kwargs[name] = SweepSpec(**sweep_kwargs)
+            kwargs[name] = SweepSpec(**_normalize_sweep_kwargs(value))
         elif name == "training":
-            kwargs[name] = TrainingSpec(**value)
+            kwargs[name] = TrainingSpec(**_normalize_training_kwargs(value))
         elif name == "outputs":
-            kwargs[name] = OutputSpec(**value)
+            kwargs[name] = OutputSpec(**_normalize_output_kwargs(value))
         elif name == "stats":
-            kwargs[name] = StatsSpec(**value)
+            kwargs[name] = StatsSpec(**_pick_known_kwargs(StatsSpec, value))
         elif name == "runtime":
-            kwargs[name] = RuntimeSpec(**value)
+            kwargs[name] = RuntimeSpec(**_pick_known_kwargs(RuntimeSpec, value))
         elif name == "self_reflection":
-            kwargs[name] = SelfReflectionSpec(**value)
+            kwargs[name] = SelfReflectionSpec(**_pick_known_kwargs(SelfReflectionSpec, value))
         elif name == "validation":
-            kwargs[name] = ValidationSpec(**value)
+            kwargs[name] = ValidationSpec(**_normalize_validation_kwargs(value))
         else:
             kwargs[name] = value
     return cls(**kwargs)

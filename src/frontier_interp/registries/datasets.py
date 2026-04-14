@@ -71,8 +71,20 @@ DATASET_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 }
 
+DATASET_ALIASES: Dict[str, str] = {
+    "wikitext": "wikitext103_validation",
+    "hellaswag": "hellaswag_validation",
+    "piqa": "piqa_validation",
+    "arc_easy": "arc_easy_validation",
+    "arc_challenge": "arc_challenge_validation",
+    "gsm8k": "gsm8k_test",
+    "alpaca": "alpaca_train",
+    "ultrachat_200k": "ultrachat_train_sft",
+}
+
 
 def resolve_dataset_spec(registry_key: str) -> Dict[str, Any]:
+    registry_key = DATASET_ALIASES.get(registry_key, registry_key)
     if registry_key not in DATASET_REGISTRY:
         raise KeyError(f"Unknown dataset registry key: {registry_key}")
     return DATASET_REGISTRY[registry_key]

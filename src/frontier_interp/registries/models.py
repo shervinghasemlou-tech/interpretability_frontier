@@ -76,8 +76,15 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
 }
 
+MODEL_ALIASES: Dict[str, str] = {
+    "qwen2_5_0_5b_base": "qwen25_05b_base",
+    "qwen2_5_0_5b_instruct": "qwen25_05b_instruct",
+    "openelm_450m": "openelm_450m_base",
+}
+
 
 def resolve_model_spec(registry_key: str) -> Dict[str, Any]:
+    registry_key = MODEL_ALIASES.get(registry_key, registry_key)
     if registry_key not in MODEL_REGISTRY:
         raise KeyError(f"Unknown model registry key: {registry_key}")
     return MODEL_REGISTRY[registry_key]

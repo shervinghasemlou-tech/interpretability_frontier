@@ -99,7 +99,26 @@ def _load_hellaswag(dataset_spec, registry) -> List[Example]:
 
 
 def _load_piqa(dataset_spec, registry) -> List[Example]:
-    ds = load_dataset(registry["dataset_name"], split=dataset_spec.split or registry["default_split"])
+    split = dataset_spec.split or registry["default_split"]
+    candidate_names = [registry["dataset_name"], "nthngdy/piqa", "gimmaru/piqa"]
+    ds = None
+    first_error = None
+    for dataset_name in candidate_names:
+        try:
+            ds = load_dataset(dataset_name, split=split)
+            break
+        except Exception as exc:
+            if first_error is None:
+                first_error = exc
+            if "Dataset scripts are no longer supported" in str(exc):
+                continue
+            raise
+    if ds is None:
+        raise RuntimeError(
+            "Failed to load PIQA from all known mirrors "
+            f"({candidate_names}). First error: {first_error}"
+        )
+
     cap = _sample_cap(dataset_spec)
     out = []
     for row in ds:
